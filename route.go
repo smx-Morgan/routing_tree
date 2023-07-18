@@ -73,14 +73,18 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	seg := strings.Split(strings.Trim(path, "/"), "/")
 	mi := &matchInfo{}
 	for _, s := range seg {
-		var matchParam bool
-		root, matchParam, ok = root.childOf(s)
+		child, ok := root.childOf(s)
 		if !ok {
+			if root != nil && root.typ == nodeTypeAny {
+				mi.n = root
+				return mi, true
+			}
 			return nil, false
 		}
-		if matchParam {
-			mi.addValue(root.path[1:], s)
+		if child.paramName != "" {
+			mi.addValue(child.paramName, s)
 		}
+		root = child
 	}
 	mi.n = root
 	return mi, true
@@ -131,21 +135,31 @@ type node struct {
 // child 返回子节点
 // 第一个返回值 *node 是命中的节点
 // 第二个返回值 bool 代表是否命中
-func (n *node) childOf(path string) (*node, bool, bool) {
+func (n *node) childOf(path string) (*node, bool) {
 	if n.children == nil {
-		if n.paramChild != nil {
-			return n.paramChild, true, false
+		if n.regChild != nil {
+			if n.regChild.regExpr.Match([]byte(path)) {
+				return n.regChild, true
+			}
 		}
-		return n.starChild, n.starChild != nil, false
+		if n.paramChild != nil {
+			return n.paramChild, true
+		}
+		return n.starChild, n.starChild != nil
 	}
 	res, ok := n.children[path]
 	if !ok {
-		if n.paramChild != nil {
-			return n.paramChild, true, false
+		if n.regChild != nil {
+			if n.regChild.regExpr.Match([]byte(path)) {
+				return n.regChild, true
+			}
 		}
-		return n.starChild, n.starChild != nil, false
+		if n.paramChild != nil {
+			return n.paramChild, true
+		}
+		return n.starChild, n.starChild != nil
 	}
-	return res, ok, false
+	return res, true
 }
 
 // childOrCreate 查找子节点，
